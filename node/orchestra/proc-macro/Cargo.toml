@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
 description = "Generate an orchestra of subsystems from a single annotated struct definition."
-repository = "https://github.com/paritytech/polkadot"
+repository = "https://github.com/AstarNetwork/polkadot"
 license = "MIT OR Apache-2.0"
 
 [package.metadata.docs.rs]
@@ -29,7 +29,7 @@ thiserror = "1"
 tracing = "0.1"
 
 [features]
-default = [] # enable "graph" by default, blocked by <https://github.com/paritytech/ci_cd/issues/433>
+default = [] # enable "graph" by default, blocked by <https://github.com/AstarNetwork/ci_cd/issues/433>
 # write the expanded version to a `orchestra-expansion.[a-f0-9]{10}.rs`
 # in the `OUT_DIR` as defined by `cargo` for the `expander` crate.
 expand = []

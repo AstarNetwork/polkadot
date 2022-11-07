@@ -18,10 +18,9 @@ mod parachain;
 mod relay_chain;
 
 use frame_support::sp_tracing;
-use xcm::prelude::*;
+use xcm::{latest::Error, prelude::*};
 use xcm_executor::traits::Convert;
 use xcm_simulator::{decl_test_network, decl_test_parachain, decl_test_relay_chain};
-// use xcm::latest::WildFungibility;
 
 pub const ALICE: sp_runtime::AccountId32 = sp_runtime::AccountId32::new([0u8; 32]);
 pub const INITIAL_BALANCE: u128 = 1_000_000_000;
@@ -357,8 +356,7 @@ mod tests {
 						response: Response::Assets((Parent, 1).into()),
 						max_weight: 1_000_000_000,
 						querier: Some(Here.into()),
-					},])
-					// Notice that we define 2 separate XCM sequences. This is because each `QueryHolding`'s reponse is done individually.
+					},]) // Notice that we define 2 separate XCM sequences. This is because each `QueryHolding`'s reponse is done individually.
 				],
 			);
 
@@ -371,7 +369,7 @@ mod tests {
 	///
 	/// Asserts that the parachain accounts are updated as expected.
 	#[test]
-	fn withdraw_and_deposit_nft() {
+	fn transfer_asset_nft() {
 		MockNet::reset();
 
 		Relay::execute_with(|| {
@@ -392,6 +390,81 @@ mod tests {
 		Relay::execute_with(|| {
 			assert_eq!(relay_chain::Uniques::owner(1, 42), Some(child_account_id(2)));
 		});
+	}
+
+	/// Scenario:
+	/// A parachain configures error handler on relay chain, [ReportError]
+	/// A parachain attempts to withdraw on relay chain more than it has, causing an error.
+	/// We expect to receive error back in a report.
+	#[test]
+	fn report_error() {
+		MockNet::reset();
+
+		let first_query_id = 1234;
+		let second_query_id = 5678;
+		let max_weight = 1_000_000_000;
+
+		// Send a message which will result in an error on the relay chain
+		ParaA::execute_with(|| {
+			// First we prepare the sequence for the error handler.
+			// The idea is to report actual error, clear error and then report it again.
+			// In the first report we expect to see the error but we don't expect it in the second one.
+			let error_handler_sequence = Xcm(vec![
+				ReportError(QueryResponseInfo {
+					destination: Parachain(1).into(),
+					query_id: first_query_id,
+					max_weight,
+				}),
+				ClearError,
+				ReportError(QueryResponseInfo {
+					destination: Parachain(1).into(),
+					query_id: second_query_id,
+					max_weight,
+				}),
+			]);
+
+			let message = Xcm(vec![
+				// This will set the error handler on the relay chain
+				SetErrorHandler(error_handler_sequence),
+				// We expect this to fail since it's more than the ParaA account has
+				WithdrawAsset((Here, INITIAL_BALANCE + 1).into()),
+			]);
+			// Send withdraw and deposit with query holding
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message.clone(),));
+		});
+
+		Relay::execute_with(|| {
+			// Withdraw was attempted & failed, balance hasn't changed
+			assert_eq!(relay_chain::Balances::free_balance(child_account_id(1)), INITIAL_BALANCE);
+		});
+
+		// Check that QueryResponse message was received and correct error was reported
+		ParaA::execute_with(|| {
+			assert_eq!(
+				parachain::MsgQueue::received_dmp(),
+				vec![
+					// We expect the first response to contain an error since we failed to withdraw assets
+					Xcm(vec![QueryResponse {
+						query_id: first_query_id,
+						response: Response::ExecutionResult(Some((
+							1, // this is the instruction index at which the error occured
+							Error::FailedToTransactAsset("")
+						))),
+						max_weight: 1_000_000_000,
+						querier: Some(Here.into()),
+					},]),
+					// The second response shouldn't contain any errors since we cleared all errors
+					Xcm(vec![QueryResponse {
+						query_id: second_query_id,
+						response: Response::ExecutionResult(None),
+						max_weight: 1_000_000_000,
+						querier: Some(Here.into()),
+					},])
+				],
+			);
+		});
+
+		// Error enum can be found here: polkadot/xcm/src/v3/traits.rs
 	}
 
 	//////////////////////////////////////////////////////

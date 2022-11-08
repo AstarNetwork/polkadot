@@ -547,6 +547,32 @@ mod tests {
 		});
 	}
 
+	/// Scenario:
+	/// ParaA sets topic on relay chain.
+	///
+	/// At the moment, I'm not sure how to verify it works in a nice & convenient way. One possible approach would be to
+	/// add custom handlers for certain actions which would make use of the topic.
+	#[test]
+	fn set_topic() {
+		MockNet::reset();
+
+		ParaA::execute_with(|| {
+			// we want to set a custom topic, which must be [u8; 32]
+			let mut topic = vec![0x1u8, 0x3, 0x3, 0x7];
+			topic.extend(vec![0u8; 28]);
+
+			let message = Xcm(vec![SetTopic(topic.try_into().unwrap())]);
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message));
+		});
+
+		Relay::execute_with(|| {
+			// VM is created when XCM execution starts, and is dropped afterwards so I cannot check internal state.
+			// TODO: add custom handler so e.g. asset withdraw will work differently based on context?
+		});
+	}
+
+	// TODO: Idea - maybe demonstrate recursive error handling or appendix setting?
+
 	//////////////////////////////////////////////////////
 	///////////////// SCENARIOS END //////////////////////
 	//////////////////////////////////////////////////////

@@ -571,6 +571,36 @@ mod tests {
 		});
 	}
 
+	/// Scenario:
+	/// We get some assets trapped and then claim them using `ClaimAsset` instruction.
+	/// We verify the balance state changes on the destination chain.
+	#[test]
+	fn claim_asset() {
+		MockNet::reset();
+
+		let trap_value = 61;
+
+		ParaA::execute_with(|| {
+			// Just withdraw assets and don't do anything with them. Post-processing will trap them.
+			let message = Xcm(vec![WithdrawAsset((Here, trap_value).into())]);
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message));
+		});
+
+		Relay::execute_with(|| {
+			// some assets were withdrawn - and lost! Or trapped, to be more precise.
+			assert_eq!(
+				relay_chain::Balances::free_balance(child_account_id(1)),
+				INITIAL_BALANCE - trap_value
+			);
+		});
+
+		ParaA::execute_with(|| {
+			// Now we can attempt to claim the trapped assets TODO: CONTINUE HERE!
+			// let message = Xcm(vec![WithdrawAsset((Here, trap_value).into())]);
+			// assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message));
+		});
+	}
+
 	// TODO: Idea - maybe demonstrate recursive error handling or appendix setting?
 
 	//////////////////////////////////////////////////////

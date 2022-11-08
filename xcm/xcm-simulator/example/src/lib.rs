@@ -467,6 +467,86 @@ mod tests {
 		// Error enum can be found here: polkadot/xcm/src/v3/traits.rs
 	}
 
+	/// Scenario:
+	/// A parachain sets appendix (callback after XCM execution finishes) and executes a remote transaction.
+	/// It expects to replies, one with execution error and one with 'success' (should be empty since result was cleared).
+	#[test]
+	fn set_appendix() {
+		MockNet::reset();
+
+		let first_query_id = 1234;
+		let second_query_id = 5678;
+		let max_weight = 1_000_000_000;
+
+		// Send a message which will set appendix and perform remote transact on the relay chain
+		ParaA::execute_with(|| {
+			// First we prepare the sequence for the appendix - to be executed after XCM execution finishes (post-call hook).
+			// The idea is to report transact status, clear it and then report it again.
+			// In the first report we expect to see the execution result (error), while in second we expect success (state after `ClearOrigin`)
+			let appendix_sequence = Xcm(vec![
+				ReportTransactStatus(QueryResponseInfo {
+					destination: Parachain(1).into(),
+					query_id: first_query_id,
+					max_weight,
+				}),
+				ClearTransactStatus,
+				ReportTransactStatus(QueryResponseInfo {
+					destination: Parachain(1).into(),
+					query_id: second_query_id,
+					max_weight,
+				}),
+			]);
+
+			// This is what we'll execute on the remote chain, relay in particular.
+			// It's a priviliged action and we expect it to fail
+			let priviliged_action =
+				relay_chain::RuntimeCall::System(
+					frame_system::Call::<relay_chain::Runtime>::set_heap_pages { pages: 1337 },
+				);
+
+			let message = Xcm(vec![
+				// This will set the error handler on the relay chain
+				SetAppendix(appendix_sequence),
+				// We expect this to fail since it's more than the ParaA account has
+				Transact {
+					origin_kind: OriginKind::SovereignAccount,
+					require_weight_at_most: 1_000_000_000,
+					call: priviliged_action.encode().into(),
+				},
+			]);
+
+			// Send XCM instructions to the relay chain
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message.clone(),));
+		});
+
+		// process received XCM instructions from the ParaA
+		Relay::execute_with(|| {
+			// just execute received XCM instructions on the relay chain side
+		});
+
+		ParaA::execute_with(|| {
+			assert_eq!(
+				parachain::MsgQueue::received_dmp(),
+				vec![
+					// We expect the first response to contain DispatchResult error since we tried to transact root-only priviliged action
+					Xcm(vec![QueryResponse {
+						query_id: first_query_id,
+						response: Response::DispatchResult(MaybeErrorCode::Error(vec![2])),
+						max_weight: 1_000_000_000,
+						querier: Some(Here.into()),
+					},]),
+					// The second response should be ok since we cleared the transact status prior to sending the response
+					Xcm(vec![QueryResponse {
+						query_id: second_query_id,
+						response: Response::DispatchResult(MaybeErrorCode::Success),
+						max_weight: 1_000_000_000,
+						querier: Some(Here.into()),
+					},])
+				],
+			);
+		});
+	}
+
 	//////////////////////////////////////////////////////
 	///////////////// SCENARIOS END //////////////////////
 	//////////////////////////////////////////////////////

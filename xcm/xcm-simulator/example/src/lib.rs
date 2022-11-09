@@ -505,7 +505,7 @@ mod tests {
 				);
 
 			let message = Xcm(vec![
-				// This will set the error handler on the relay chain
+				// This will set the post process handler on the relay chain
 				SetAppendix(appendix_sequence),
 				// We expect this to fail since it's more than the ParaA account has
 				Transact {
@@ -573,7 +573,8 @@ mod tests {
 
 	/// Scenario:
 	/// We get some assets trapped and then claim them using `ClaimAsset` instruction.
-	/// We verify the balance state changes on the destination chain.
+	/// We verify the balance state changes on the destination chain, right after they were trapped
+	/// and after they were claimed.
 	#[test]
 	fn claim_asset() {
 		MockNet::reset();
@@ -595,9 +596,94 @@ mod tests {
 		});
 
 		ParaA::execute_with(|| {
-			// Now we can attempt to claim the trapped assets TODO: CONTINUE HERE!
-			// let message = Xcm(vec![WithdrawAsset((Here, trap_value).into())]);
-			// assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message));
+			// Now we can attempt to claim the trapped assets.
+			// It's important we specify EXACTLY the amount of assets that were trapped and use the same origin we used when assets got trapped.
+			let message = Xcm(vec![
+				ClaimAsset {
+					assets: (Here, trap_value).into(),
+					ticket: Here.into(), // not important, this value is equivalent to `Don't care`
+				},
+				DepositAsset { assets: AllCounted(1).into(), beneficiary: Parachain(1).into() },
+			]);
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message));
+		});
+
+		Relay::execute_with(|| {
+			// We can verify that previous balance was restored - trapped assets have been re-claimed.
+			assert_eq!(relay_chain::Balances::free_balance(child_account_id(1)), INITIAL_BALANCE);
+		});
+	}
+
+	/// Scenario:
+	/// We register appendix and error handler on the relay chain.
+	/// In one case, assets will get deposited to ParaA account, in other to `ParaB` account.
+	/// We rely on `ExpectAsset` instruction to raise an error in case expected condition isn't met.
+	/// Both scenarios are tested, with and without the error being raised.
+	#[test]
+	fn expect_asset_branching() {
+		MockNet::reset();
+
+		// In case execution results in an error, deposit asset to `ParaA` account
+		let error_handler_seq = Xcm(vec![DepositAsset {
+			assets: AllCounted(1).into(),
+			beneficiary: Parachain(1).into(),
+		}]);
+
+		// In case all goes fine, deposit asset to `ParaB` account
+		let appendix_handler_seq = Xcm(vec![DepositAsset {
+			assets: AllCounted(1).into(),
+			beneficiary: Parachain(2).into(),
+		}]);
+
+		let send_amount = 29;
+
+		// We will withdraw some assets but will expect to have more in the holding register than we actually have.
+		// This is intentional to produce an error.
+		ParaA::execute_with(|| {
+			let message = Xcm(vec![
+				SetErrorHandler(error_handler_seq.clone()),
+				SetAppendix(appendix_handler_seq.clone()),
+				WithdrawAsset((Here, send_amount).into()),
+				ExpectAsset((Here, send_amount + 1).into()),
+			]);
+			// Send XCM instructions to the relay chain
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message.clone(),));
+		});
+
+		// process received XCM instructions from the ParaA.
+		// We expect that error was raised since we expected too much assets in the holding register.
+		// In that scenario, all assets that were withdrawn should hav been deposited back to `ParaA`
+		Relay::execute_with(|| {
+			assert_eq!(relay_chain::Balances::free_balance(child_account_id(1)), INITIAL_BALANCE);
+
+			assert_eq!(relay_chain::Balances::free_balance(child_account_id(2)), INITIAL_BALANCE);
+		});
+
+		// We repeat the same sequence but this time we'll expect a bit less than what we have.
+		// This shoudl pass and no error should be raised.
+		ParaA::execute_with(|| {
+			let message = Xcm(vec![
+				SetErrorHandler(error_handler_seq.clone()),
+				SetAppendix(appendix_handler_seq.clone()),
+				WithdrawAsset((Here, send_amount).into()),
+				ExpectAsset((Here, send_amount - 1).into()),
+			]);
+			// Send XCM instructions to the relay chain
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message.clone(),));
+		});
+
+		// process received XCM instructions from the `ParaA`.
+		// We expect that assets were deposited to `ParaB` since appendix handler should have been executed.
+		Relay::execute_with(|| {
+			assert_eq!(
+				relay_chain::Balances::free_balance(child_account_id(1)),
+				INITIAL_BALANCE - send_amount
+			);
+
+			assert_eq!(
+				relay_chain::Balances::free_balance(child_account_id(2)),
+				INITIAL_BALANCE + send_amount
+			);
 		});
 	}
 

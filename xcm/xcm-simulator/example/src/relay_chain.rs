@@ -170,7 +170,7 @@ impl Config for XcmConfig {
 	type Weigher = FixedWeightBounds<BaseXcmWeight, RuntimeCall, MaxInstructions>;
 	type Trader = FixedRateOfFungible<TokensPerSecond, ()>;
 	type ResponseHandler = ();
-	type AssetTrap = ();
+	type AssetTrap = XcmPallet;
 	type AssetLocker = XcmPallet;
 	type AssetExchanger = ();
 	type AssetClaims = XcmPallet;

@@ -687,6 +687,62 @@ mod tests {
 		});
 	}
 
+	/// Scenario
+	/// Query system pallet on the relay chain and ensure it's present with expected version.
+	#[test]
+	fn query_pallet() {
+		MockNet::reset();
+
+		let query_id = 1234;
+		let max_weight = 1_000_000_000;
+		let module_name = "frame_system";
+
+		// Query the relay chain for the system pallet by it's module name
+		ParaA::execute_with(|| {
+			let message = Xcm(vec![QueryPallet {
+				module_name: module_name.into(),
+				response_info: QueryResponseInfo {
+					destination: Parachain(1).into(),
+					query_id,
+					max_weight,
+				},
+			}]);
+			assert_ok!(ParachainPalletXcm::send_xcm(Here, Parent, message.clone(),));
+		});
+
+		Relay::execute_with(|| {
+			// execute message received from ParaA, send response back to `ParaA`
+		});
+
+		// Check that QueryResponse message was received and pallet info is as expected
+		ParaA::execute_with(|| {
+			assert_eq!(
+				parachain::MsgQueue::received_dmp(),
+				vec![
+					// We expect the first response to contain an error since we failed to withdraw assets
+					Xcm(vec![QueryResponse {
+						query_id,
+						response: Response::PalletsInfo(
+							vec![PalletInfo::new(
+								0,                  // index
+								"System".into(),    // name
+								module_name.into(), // module_name
+								4,                  // major
+								0,                  // minor
+								0,                  // patch
+							)
+							.unwrap()]
+							.try_into()
+							.unwrap()
+						),
+						max_weight: 1_000_000_000,
+						querier: Some(Here.into()),
+					},])
+				],
+			);
+		});
+	}
+
 	// TODO: Idea - maybe demonstrate recursive error handling or appendix setting?
 
 	//////////////////////////////////////////////////////

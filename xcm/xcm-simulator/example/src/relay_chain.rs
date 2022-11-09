@@ -175,7 +175,7 @@ impl Config for XcmConfig {
 	type AssetExchanger = ();
 	type AssetClaims = XcmPallet;
 	type SubscriptionService = ();
-	type PalletInstancesInfo = ();
+	type PalletInstancesInfo = AllPalletsWithSystem;
 	type FeeManager = ();
 	type MaxAssetsIntoHolding = MaxAssetsIntoHolding;
 	type MessageExporter = ();

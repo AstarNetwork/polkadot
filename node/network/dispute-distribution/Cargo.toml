@@ -25,7 +25,7 @@ lru = "0.8.0"
 indexmap = "1.9.1"
 
 [dev-dependencies]
-async-trait = "0.1.57"
+async-trait = "0.1.58"
 polkadot-node-subsystem-test-helpers = { path = "../../subsystem-test-helpers" }
 sp-keyring = { git = "https://github.com/paritytech/substrate", branch = "master" }
 sp-tracing = { git = "https://github.com/paritytech/substrate", branch = "master" }

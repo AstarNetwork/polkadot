@@ -6,7 +6,7 @@ edition.workspace = true
 description = "Primitives types for the Node-side"
 
 [dependencies]
-async-trait = "0.1.57"
+async-trait = "0.1.64"
 hex = "0.4.3"
 polkadot-primitives = { path = "../../../primitives" }
 polkadot-node-primitives = { path = "../../primitives" }
